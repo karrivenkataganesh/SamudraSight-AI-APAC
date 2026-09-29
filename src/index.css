@@ -1,0 +1,157 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color-scheme: dark;
+  }
+
+  .font-mono-tactical {
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .font-display {
+    font-family: 'Chakra Petch', 'Inter', sans-serif;
+  }
+}
+
+/* Custom scrollbars for tactical drawers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Radar Sweep Animation */
+@keyframes radar-sweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.radar-sweep {
+  animation: radar-sweep 4s linear infinite;
+  transform-origin: center center;
+}
+
+/* Glowing pulse animations */
+@keyframes tactical-pulse-red {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes tactical-pulse-cyan {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(6, 182, 212, 0);
+  }
+}
+
+.pulse-red-glow {
+  animation: tactical-pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.pulse-cyan-glow {
+  animation: tactical-pulse-cyan 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Leaflet Dark Mode Customization */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background-color: #020617 !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #090d16 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #1e293b !important;
+  border-radius: 10px !important;
+  box-shadow: 0 20px 35px -5px rgba(0, 0, 0, 0.85), 0 0 15px rgba(6, 182, 212, 0.15) !important;
+  padding: 0 !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  max-width: 360px !important;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.4 !important;
+}
+
+/* Subtle expand accordion details styling for map popups */
+.leaflet-popup-content details summary::-webkit-details-marker {
+  display: none;
+}
+
+.leaflet-popup-content details summary {
+  list-style: none;
+}
+
+.leaflet-popup-content details[open] {
+  animation: popup-expand 0.25s ease-out;
+}
+
+@keyframes popup-expand {
+  0% {
+    opacity: 0.6;
+    transform: translateY(-3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.leaflet-popup-tip {
+  background: #0f172a !important;
+  border: 1px solid #1e293b !important;
+}
+
+.leaflet-control-zoom a {
+  background-color: #0f172a !important;
+  color: #94a3b8 !important;
+  border-color: #334155 !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+.leaflet-control-attribution {
+  background-color: rgba(2, 6, 23, 0.8) !important;
+  color: #64748b !important;
+  font-size: 10px !important;
+}
+
+.leaflet-control-attribution a {
+  color: #06b6d4 !important;
+}
+
+/* Hologram grid lines */
+.tactical-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
