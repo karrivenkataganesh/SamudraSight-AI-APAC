@@ -756,7 +756,7 @@ const ResilientSatelliteViewer: React.FC<{
 };
 
 export const GoogleMapsLiveTracking: React.FC<GoogleMapsLiveTrackingProps> = () => {
-  const envKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+  const envKey = (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_GOOGLE_MAPS_API_KEY) || '';
   const [customKey, setCustomKey] = useState<string>(envKey);
   const [authFailed, setAuthFailed] = useState<boolean>(false);
 
@@ -772,7 +772,6 @@ export const GoogleMapsLiveTracking: React.FC<GoogleMapsLiveTrackingProps> = () 
   const [showCities, setShowCities] = useState<boolean>(true);
   const [showTowns, setShowTowns] = useState<boolean>(true);
   const [showAdminAreas, setShowAdminAreas] = useState<boolean>(true);
-  const [showLabelsMenu, setShowLabelsMenu] = useState<boolean>(false);
 
   const [cycloneData, setCycloneData] = useState<LiveCycloneData>(MOCK_CATEGORY_4_CYCLONE);
   const [isSimulated, setIsSimulated] = useState<boolean>(true);
@@ -1248,10 +1247,10 @@ export const GoogleMapsLiveTracking: React.FC<GoogleMapsLiveTrackingProps> = () 
           </button>
         ) : (
           <form onSubmit={handleApplyCustomKey} className="p-2 rounded-lg bg-slate-950 border border-slate-700 text-xs space-y-1.5 w-52 shadow-2xl">
-            <div className="text-[9px] text-slate-400 font-semibold">Google Maps API Key (AIza...):</div>
+            <div className="text-[9px] text-slate-400 font-semibold">Google Maps API Key:</div>
             <input
               type="text"
-              placeholder="AIzaSy..."
+              placeholder="Enter Google Maps API Key..."
               value={keyInput}
               onChange={(e) => setKeyInput(e.target.value)}
               className="w-full px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-[10px] focus:outline-none focus:border-cyan-500"
@@ -1277,96 +1276,13 @@ export const GoogleMapsLiveTracking: React.FC<GoogleMapsLiveTrackingProps> = () 
 
       {/* Floating Tactical Overlay HUD: Top-Right Map Controls & Legend */}
       <div className="absolute top-3 right-3 z-20 flex flex-col gap-2 items-end">
-        {/* Basemap Layer Selector & Custom Label/Traffic Controls */}
+        {/* Basemap Layer Selector */}
         <div className="flex items-center gap-2">
-          {/* Custom Labels & Traffic Settings Toggle Button */}
-          <div className="relative">
-            <button
-              onClick={() => setShowLabelsMenu(!showLabelsMenu)}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white backdrop-blur-md shadow-2xl flex items-center gap-1.5 text-[11px] font-bold"
-              title="Configure UI Labels & Google Maps Traffic Layer"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Layers & Labels</span>
-              {showLabelsMenu ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-
-            {/* Custom Styling & UI Feature Dropdown */}
-            {showLabelsMenu && (
-              <div className="absolute top-10 right-0 w-64 rounded-xl bg-slate-950/95 border border-slate-800 p-3 shadow-2xl backdrop-blur-xl text-xs space-y-2.5 z-40 animate-in fade-in zoom-in-95">
-                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center justify-between border-b border-slate-800 pb-1.5">
-                  <span>Satellite Feature Styling</span>
-                  <span className="text-cyan-400 text-[9px]">Google Maps Platform</span>
-                </div>
-
-                {/* Google TrafficLayer Toggle */}
-                <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                  <span className="flex items-center gap-2">
-                    <Car className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Live Traffic Layer</span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={showTraffic}
-                    onChange={(e) => setShowTraffic(e.target.checked)}
-                    className="rounded border-slate-700 text-amber-500 focus:ring-0 bg-slate-900 cursor-pointer"
-                  />
-                </label>
-
-                {/* City Labels Toggle */}
-                <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                  <span className="flex items-center gap-2">
-                    <Building className="w-3.5 h-3.5 text-yellow-300" />
-                    <span>Cities & Metros</span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={showCities}
-                    onChange={(e) => setShowCities(e.target.checked)}
-                    className="rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900 cursor-pointer"
-                  />
-                </label>
-
-                {/* Towns & Fishing Villages Toggle */}
-                <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                  <span className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Towns & Villages</span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={showTowns}
-                    onChange={(e) => setShowTowns(e.target.checked)}
-                    className="rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900 cursor-pointer"
-                  />
-                </label>
-
-                {/* Administrative Areas Toggle */}
-                <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                  <span className="flex items-center gap-2">
-                    <Layers className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Administrative Areas</span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={showAdminAreas}
-                    onChange={(e) => setShowAdminAreas(e.target.checked)}
-                    className="rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900 cursor-pointer"
-                  />
-                </label>
-
-                <div className="pt-1 border-t border-slate-800 text-[10px] text-slate-500">
-                  Styles active: administrative.locality, administrative.province, traffic
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Basemap Layer Selector (Hybrid / Satellite / Roadmap / Terrain) */}
-          <div className="p-1 rounded-xl bg-slate-950/90 border border-slate-800 backdrop-blur-md shadow-2xl flex items-center gap-1 text-[11px]">
+          {/* Basemap Layer Selector (Hybrid / Pure Satellite only) */}
+          <div className="p-0.5 rounded-lg bg-slate-950/90 border border-slate-800 backdrop-blur-md shadow-xl flex items-center gap-0.5 text-[10px] h-7">
             <button
               onClick={() => setMapType('hybrid')}
-              className={`px-2.5 py-1 rounded-lg transition-all font-bold ${
+              className={`px-2 py-0.5 rounded-md transition-all font-bold ${
                 mapType === 'hybrid'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -1378,7 +1294,7 @@ export const GoogleMapsLiveTracking: React.FC<GoogleMapsLiveTrackingProps> = () 
 
             <button
               onClick={() => setMapType('satellite')}
-              className={`px-2.5 py-1 rounded-lg transition-all font-bold ${
+              className={`px-2 py-0.5 rounded-md transition-all font-bold ${
                 mapType === 'satellite'
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -1386,30 +1302,6 @@ export const GoogleMapsLiveTracking: React.FC<GoogleMapsLiveTrackingProps> = () 
               title="Pure satellite imagery without place labels"
             >
               <span>🌍 Pure Sat</span>
-            </button>
-
-            <button
-              onClick={() => setMapType('roadmap')}
-              className={`px-2.5 py-1 rounded-lg transition-all font-bold ${
-                mapType === 'roadmap'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Detailed street, city, and village roadmap"
-            >
-              <span>🗺️ Roadmap</span>
-            </button>
-
-            <button
-              onClick={() => setMapType('terrain')}
-              className={`px-2.5 py-1 rounded-lg transition-all font-bold ${
-                mapType === 'terrain'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Topographical elevation terrain map"
-            >
-              <span>⛰️ Terrain</span>
             </button>
           </div>
         </div>

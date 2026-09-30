@@ -49,7 +49,7 @@ export const TimeSlider: React.FC<TimeSliderProps> = ({
   return (
     <div 
       className="bg-slate-950/90 backdrop-blur-md border border-slate-800/90 rounded-xl p-2.5 shadow-2xl font-mono-tactical text-slate-100 max-w-lg w-full"
-      style={{ height: '112px', width: '480px' }}
+      style={{ height: '112px', width: '480px', maxWidth: '100%' }}
     >
       {/* Top row: Current Landfall Countdown & Key Gauges */}
       <div className="flex items-center justify-between mb-1">

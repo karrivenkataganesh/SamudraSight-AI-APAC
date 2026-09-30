@@ -53,8 +53,6 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
   const [showAssets, setShowAssets] = useState(false);
   const [showRoutes, setShowRoutes] = useState(false);
   const [showRadar, setShowRadar] = useState(false);
-  const [showLayersMenu, setShowLayersMenu] = useState(false);
-  const [showEvaluationRoster, setShowEvaluationRoster] = useState(false);
   const [selectedSettlement, setSelectedSettlement] = useState<CoastalSettlement | null>(null);
   const [settlementRiskFilter, setSettlementRiskFilter] = useState<'ALL' | 'CRITICAL' | 'SAFE'>('ALL');
   
