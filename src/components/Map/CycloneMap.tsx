@@ -3,14 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { CriticalAsset, EvacuationRoute, TimeStepId } from '../../types/disaster';
 import { CRITICAL_ASSETS, EVACUATION_ROUTES, FLOOD_POLYGONS, TIME_STEPS } from '../../data/syntheticGeoData';
 import { COASTAL_SETTLEMENTS, CoastalSettlement, calculateSettlementRisk } from '../../data/coastalSettlements';
 import { TimeSlider } from './TimeSlider';
 import { TacticalSectorLegend } from './TacticalSectorLegend';
-import { Layers, Crosshair, ZoomIn, ZoomOut, AlertTriangle, Shield, Zap, Hospital, Ban, Compass, Radio, MapPin, Building2, Anchor } from 'lucide-react';
+import { ZoomLevelDetailsCard } from './ZoomLevelDetailsCard';
+import { createFloodDepthHeatmap, createWindVelocityHeatmap, createPopulationDensityHeatmap } from '../../utils/tacticalHeatmaps';
+import { Layers, Crosshair, ZoomIn, ZoomOut, AlertTriangle, Shield, Zap, Hospital, Ban, Compass, Radio, MapPin, Building2, Anchor, Users, ChevronDown, ChevronUp, Wind, Waves, Grid, Flame } from 'lucide-react';
 
 interface CycloneMapProps {
   currentTimeStep: TimeStepId;
@@ -29,22 +31,67 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const baseTileLayerRef = useRef<L.TileLayer | null>(null);
+  const labelsTileLayerRef = useRef<L.TileLayer | null>(null);
   const floodLayerRef = useRef<L.Polygon | null>(null);
   const markersGroupRef = useRef<L.LayerGroup | null>(null);
   const settlementsGroupRef = useRef<L.LayerGroup | null>(null);
   const routesGroupRef = useRef<L.LayerGroup | null>(null);
   const radarGroupRef = useRef<L.LayerGroup | null>(null);
+  
+  // Tactical Risk Heatmaps Layer Refs
+  const floodDepthHeatmapRef = useRef<L.LayerGroup | null>(null);
+  const windVelocityHeatmapRef = useRef<L.LayerGroup | null>(null);
+  const populationDensityHeatmapRef = useRef<L.LayerGroup | null>(null);
 
-  // Layer toggles
+  // Basemap style: default to high-resolution satellite imagery (like Google Maps Satellite Live Tracking)
+  const [baseMapStyle, setBaseMapStyle] = useState<'hybrid' | 'satellite' | 'dark'>('hybrid');
+
+  // Layer toggles: focused only on city names & locations for people evaluation and the danger zone
   const [showFlood, setShowFlood] = useState(true);
   const [showSettlements, setShowSettlements] = useState(true);
-  const [showAssets, setShowAssets] = useState(true);
-  const [showRoutes, setShowRoutes] = useState(true);
-  const [showRadar, setShowRadar] = useState(true);
+  const [showAssets, setShowAssets] = useState(false);
+  const [showRoutes, setShowRoutes] = useState(false);
+  const [showRadar, setShowRadar] = useState(false);
   const [showLayersMenu, setShowLayersMenu] = useState(false);
+  const [showEvaluationRoster, setShowEvaluationRoster] = useState(false);
   const [selectedSettlement, setSelectedSettlement] = useState<CoastalSettlement | null>(null);
   const [settlementRiskFilter, setSettlementRiskFilter] = useState<'ALL' | 'CRITICAL' | 'SAFE'>('ALL');
+  
+  // Granular Risk Heatmaps Toggles
+  const [showFloodDepthHeatmap, setShowFloodDepthHeatmap] = useState<boolean>(false);
+  const [showWindVelocityHeatmap, setShowWindVelocityHeatmap] = useState<boolean>(false);
+  const [showPopulationDensityHeatmap, setShowPopulationDensityHeatmap] = useState<boolean>(false);
+  const [showTacticalGrid, setShowTacticalGrid] = useState<boolean>(false);
+
+  // Zoom and Camera Telemetry State
   const [zoomLevel, setZoomLevel] = useState<number>(11);
+  const [mapCenterCoords, setMapCenterCoords] = useState<{ lat: number; lng: number }>({ lat: 16.9850, lng: 82.2500 });
+
+  // Calculate people risk evaluation for all cities/locations at current timeline step to determine which city is at MOST risk
+  const evaluatedSettlements = useMemo(() => {
+    const stepData = TIME_STEPS[currentTimeStep];
+    const stormCenter = { lat: 16.9800, lng: 82.3800 };
+    return COASTAL_SETTLEMENTS.map((settlement) => {
+      const risk = calculateSettlementRisk(settlement, stormCenter, stepData.stormSurgeMeters, stepData.windSpeedKmh);
+      let score = 0;
+      if (risk.level === 'CATASTROPHIC') score += 1000;
+      else if (risk.level === 'CRITICAL') score += 500;
+      else if (risk.level === 'HIGH') score += 250;
+      else if (risk.level === 'MODERATE') score += 100;
+      else score += 10;
+      score += Math.max(0, (risk.inundationPotentialMeters || 0) * 100);
+      score += Math.max(0, 300 - (risk.distanceToEyeKm || 300));
+
+      return {
+        settlement,
+        risk,
+        score,
+      };
+    }).sort((a, b) => b.score - a.score);
+  }, [currentTimeStep]);
+
+  const mostAtRiskCity = evaluatedSettlements[0];
 
   // Initialize Map
   useEffect(() => {
@@ -67,12 +114,29 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
       setZoomLevel(map.getZoom());
     });
 
-    // Dark Matter high-contrast tactical base map tiles
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> | SamudraSight-APAC Radar',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(map);
+    map.on('moveend', () => {
+      const c = map.getCenter();
+      setMapCenterCoords({ lat: c.lat, lng: c.lng });
+    });
+
+    // High-Resolution Satellite Base Layer (Like Google Maps Satellite Live Tracking)
+    baseTileLayerRef.current = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        attribution: 'Tiles &copy; Esri &mdash; High-Resolution Satellite Surveillance',
+        maxZoom: 19,
+      }
+    ).addTo(map);
+
+    // Hybrid Place Names, Cities, Roads & Infrastructure Overlay
+    labelsTileLayerRef.current = L.tileLayer(
+      'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      {
+        attribution: 'Labels &copy; Esri &mdash; Places & Infrastructure',
+        maxZoom: 19,
+        opacity: 0.95,
+      }
+    ).addTo(map);
 
     // Create layer groups
     settlementsGroupRef.current = L.layerGroup().addTo(map);
@@ -97,6 +161,103 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
     };
   }, []);
 
+  // Dynamic Basemap Switcher (Satellite Hybrid, Pure Satellite, or Dark Matter)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (baseTileLayerRef.current) {
+      map.removeLayer(baseTileLayerRef.current);
+      baseTileLayerRef.current = null;
+    }
+    if (labelsTileLayerRef.current) {
+      map.removeLayer(labelsTileLayerRef.current);
+      labelsTileLayerRef.current = null;
+    }
+
+    if (baseMapStyle === 'dark') {
+      baseTileLayerRef.current = L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        {
+          attribution: '&copy; CARTO | Dark Tactical Base',
+          subdomains: 'abcd',
+          maxZoom: 19,
+        }
+      ).addTo(map);
+    } else {
+      // High-resolution Satellite Imagery (matches Google Maps Satellite Live Tracking)
+      baseTileLayerRef.current = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: 'Tiles &copy; Esri &mdash; High-Resolution Satellite Surveillance',
+          maxZoom: 19,
+        }
+      ).addTo(map);
+
+      if (baseMapStyle === 'hybrid') {
+        labelsTileLayerRef.current = L.tileLayer(
+          'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+          {
+            attribution: 'Labels &copy; Esri &mdash; Places & Infrastructure',
+            maxZoom: 19,
+            opacity: 0.95,
+          }
+        ).addTo(map);
+      }
+    }
+  }, [baseMapStyle]);
+
+  // Update Flood Depth Risk Heatmap
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (floodDepthHeatmapRef.current) {
+      map.removeLayer(floodDepthHeatmapRef.current);
+      floodDepthHeatmapRef.current = null;
+    }
+
+    if (showFloodDepthHeatmap) {
+      const layer = createFloodDepthHeatmap(currentTimeStep);
+      layer.addTo(map);
+      floodDepthHeatmapRef.current = layer;
+    }
+  }, [showFloodDepthHeatmap, currentTimeStep]);
+
+  // Update Wind Velocity Zones Risk Heatmap
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (windVelocityHeatmapRef.current) {
+      map.removeLayer(windVelocityHeatmapRef.current);
+      windVelocityHeatmapRef.current = null;
+    }
+
+    if (showWindVelocityHeatmap) {
+      const layer = createWindVelocityHeatmap(currentTimeStep);
+      layer.addTo(map);
+      windVelocityHeatmapRef.current = layer;
+    }
+  }, [showWindVelocityHeatmap, currentTimeStep]);
+
+  // Update Population Density Risk Heatmap
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (populationDensityHeatmapRef.current) {
+      map.removeLayer(populationDensityHeatmapRef.current);
+      populationDensityHeatmapRef.current = null;
+    }
+
+    if (showPopulationDensityHeatmap) {
+      const layer = createPopulationDensityHeatmap();
+      layer.addTo(map);
+      populationDensityHeatmapRef.current = layer;
+    }
+  }, [showPopulationDensityHeatmap]);
+
   // Update Dynamic Flood Polygon on TimeStep Change
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -117,22 +278,31 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
 
     const polygon = L.polygon(latLngs, {
       color: polygonFeature.properties.color,
-      weight: 2.5,
-      dashArray: '6, 6',
+      weight: 3,
+      dashArray: '8, 8',
       fillColor: polygonFeature.properties.fillColor,
-      fillOpacity: polygonFeature.properties.fillOpacity,
+      fillOpacity: Math.min(0.65, polygonFeature.properties.fillOpacity + 0.12),
     }).addTo(map);
 
     polygon.bindPopup(`
-      <div class="p-3 font-mono-tactical text-xs text-slate-100 bg-slate-900 rounded-lg">
-        <div class="flex items-center gap-2 font-bold text-sm text-cyan-400 mb-1">
-          <span>🌊 Storm Surge Inundation Zone</span>
+      <div class="p-3.5 font-mono-tactical text-xs text-slate-100 bg-slate-950 rounded-xl border border-red-500 shadow-2xl space-y-2">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <div class="flex items-center gap-1.5 font-bold text-sm text-red-400">
+            <span>🌊 DANGER ZONE: SURGE INUNDATION</span>
+          </div>
+          <span class="px-2 py-0.5 rounded text-[9px] font-bold bg-red-950 text-red-300 border border-red-500 uppercase">
+            ${polygonFeature.properties.hazardLevel} THREAT
+          </span>
         </div>
-        <div class="space-y-1 text-slate-300">
-          <div><span class="text-slate-500">Timeline:</span> <strong class="text-white">${currentTimeStep}</strong></div>
-          <div><span class="text-slate-500">Surge Crest:</span> <strong class="text-amber-400">+${stepData.stormSurgeMeters}m MSL</strong></div>
-          <div><span class="text-slate-500">Inundated Area:</span> <strong class="text-cyan-300">${stepData.coastalInundationSqKm} km²</strong></div>
-          <div><span class="text-slate-500">Risk Severity:</span> <strong class="text-red-400 uppercase">${polygonFeature.properties.hazardLevel}</strong></div>
+        <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+          <div><span class="text-slate-500 block text-[9px]">Timeline Step</span> <strong class="text-white">${currentTimeStep}</strong></div>
+          <div><span class="text-slate-500 block text-[9px]">Surge Inundation Crest</span> <strong class="text-amber-400 font-bold">+${stepData.stormSurgeMeters}m MSL</strong></div>
+          <div><span class="text-slate-500 block text-[9px]">Inundated Land Area</span> <strong class="text-cyan-300">${stepData.coastalInundationSqKm} km²</strong></div>
+          <div><span class="text-slate-500 block text-[9px]">Sustained Wind Speed</span> <strong class="text-red-400">${stepData.windSpeedKmh} km/h</strong></div>
+        </div>
+        <div class="text-[10px] text-slate-400 pt-1 border-t border-slate-800 flex justify-between">
+          <span>Active Coastal Hazard Model</span>
+          <span class="text-cyan-400">Godavari-Kakinada Sector</span>
         </div>
       </div>
     `);
@@ -171,6 +341,7 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
         stepData.windSpeedKmh
       );
 
+      const isMostAtRisk = settlement.id === mostAtRiskCity?.settlement.id;
       const isSelected = selectedSettlement?.id === settlement.id;
 
       // Color coding
@@ -178,10 +349,10 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
       let dotColor = '#60a5fa';
       let pingHtml = '';
 
-      if (risk.level === 'CATASTROPHIC') {
+      if (isMostAtRisk || risk.level === 'CATASTROPHIC') {
         pinColor = '#ef4444';
         dotColor = '#dc2626';
-        pingHtml = '<div class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></div>';
+        pingHtml = '<div class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></div><div class="absolute -top-2 -right-2 w-5 h-5 bg-red-500/40 rounded-full animate-pulse"></div>';
       } else if (risk.level === 'CRITICAL') {
         pinColor = '#f43f5e';
         dotColor = '#e11d48';
@@ -197,20 +368,32 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
         dotColor = '#059669';
       }
 
+      const formattedPop = settlement.population >= 1000
+        ? `${(settlement.population / 1000).toFixed(0)}k`
+        : settlement.population.toString();
+
+      const mostRiskBadge = isMostAtRisk
+        ? `<div class="absolute -top-3.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-red-600 border border-white text-[8px] font-black text-white whitespace-nowrap shadow-xl animate-bounce z-20 flex items-center gap-0.5">
+             <span>🚨</span>
+             <span>MOST RISK</span>
+           </div>`
+        : '';
+
       const iconHtml = `
         <div class="relative group cursor-pointer flex flex-col items-center">
+          ${mostRiskBadge}
           ${pingHtml}
-          <!-- Location Name Tag with Risk Dot -->
-          <div class="px-2 py-0.5 rounded-md border flex items-center gap-1.5 shadow-xl transition-all group-hover:scale-105"
-               style="background-color: rgba(2, 6, 23, 0.94); border-color: ${pinColor}; box-shadow: 0 0 10px ${pinColor}55;">
+          <!-- Location Name Tag with Population and Risk -->
+          <div class="px-2 py-0.5 rounded-md border flex items-center gap-1.5 shadow-2xl transition-all group-hover:scale-105"
+               style="background-color: rgba(2, 6, 23, 0.94); border-color: ${pinColor}; box-shadow: 0 0 12px ${pinColor}66;">
             <div class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${dotColor};"></div>
             <div class="flex flex-col leading-none">
               <span class="text-[11px] font-bold text-white tracking-tight">${settlement.name}</span>
-              ${settlement.localNameTelugu ? `<span class="text-[9px] text-slate-400 font-sans">${settlement.localNameTelugu}</span>` : ''}
+              <span class="text-[8px] text-slate-400 font-mono-tactical">👥 ${formattedPop} pop</span>
             </div>
             <span class="text-[8px] px-1 py-0.5 rounded font-extrabold tracking-wider uppercase ml-0.5"
                   style="background-color: ${pinColor}22; color: ${pinColor}; border: 1px solid ${pinColor}44;">
-              ${risk.level === 'LOW_SAFE' ? 'SAFE' : risk.level}
+              ${isMostAtRisk ? 'MOST RISK' : risk.level === 'LOW_SAFE' ? 'SAFE' : risk.level}
             </span>
           </div>
 
@@ -222,14 +405,20 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
       const customIcon = L.divIcon({
         className: 'custom-settlement-label-pin',
         html: iconHtml,
-        iconSize: [140, 36],
-        iconAnchor: [70, 34],
+        iconSize: [145, 38],
+        iconAnchor: [72, 36],
       });
 
       const marker = L.marker([settlement.coordinates.lat, settlement.coordinates.lng], { icon: customIcon });
 
       const popupHtml = `
         <div class="p-3.5 font-mono-tactical text-xs text-slate-100 bg-slate-950 rounded-xl border border-slate-800 shadow-2xl max-w-xs space-y-2">
+          ${isMostAtRisk ? `
+            <div class="px-2 py-1 rounded bg-red-950/90 border border-red-500 text-red-200 text-[10px] font-black flex items-center justify-between">
+              <span>🚨 #1 MOST AT-RISK LOCATION IN DANGER ZONE</span>
+              <span class="text-white">${currentTimeStep}</span>
+            </div>
+          ` : ''}
           <div class="flex items-center justify-between border-b border-slate-800 pb-2">
             <div>
               <div class="font-bold text-sm text-white flex items-center gap-1.5">
@@ -244,23 +433,25 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
             </span>
           </div>
 
+          <div class="p-2 rounded bg-slate-900/90 border border-slate-800 space-y-1 text-[11px]">
+            <div class="text-[9px] uppercase font-bold text-slate-400 flex items-center gap-1">
+              <span>👥</span> People Evaluation
+            </div>
+            <div class="grid grid-cols-2 gap-1 text-[10px]">
+              <div><span class="text-slate-500">Population:</span> <strong class="text-white">${settlement.population.toLocaleString()}</strong></div>
+              <div><span class="text-slate-500">Households:</span> <strong class="text-slate-200">${settlement.estimatedHouseholds.toLocaleString()}</strong></div>
+              <div><span class="text-slate-500">Evac Status:</span> <strong class="text-amber-300 truncate block">${settlement.evacuationStatus}</strong></div>
+              <div><span class="text-slate-500">Surge Crest:</span> <strong class="${risk.inundationPotentialMeters > 0 ? 'text-red-400 font-bold' : 'text-emerald-400'}">${risk.inundationPotentialMeters > 0 ? `+${risk.inundationPotentialMeters}m Breach` : 'Zero Threat'}</strong></div>
+            </div>
+          </div>
+
           <div class="grid grid-cols-2 gap-2 text-[11px] bg-slate-900/80 p-2 rounded-lg border border-slate-800">
             <div>
-              <span class="text-slate-500 block text-[9px]">Elevation</span>
+              <span class="text-slate-500 block text-[9px]">Ground Elevation</span>
               <strong class="text-slate-200">${settlement.elevationMeters}m MSL</strong>
             </div>
             <div>
-              <span class="text-slate-500 block text-[9px]">Surge Inundation</span>
-              <strong class="${risk.inundationPotentialMeters > 0 ? 'text-red-400' : 'text-emerald-400'}">
-                ${risk.inundationPotentialMeters > 0 ? `+${risk.inundationPotentialMeters}m Threat` : 'Zero Threat'}
-              </strong>
-            </div>
-            <div>
-              <span class="text-slate-500 block text-[9px]">Population</span>
-              <strong class="text-slate-200">${settlement.population.toLocaleString()}</strong>
-            </div>
-            <div>
-              <span class="text-slate-500 block text-[9px]">Distance to Eye</span>
+              <span class="text-slate-500 block text-[9px]">Distance to Storm Eye</span>
               <strong class="text-amber-300">${risk.distanceToEyeKm} km</strong>
             </div>
           </div>
@@ -271,7 +462,7 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
           </div>
 
           <div class="p-2 rounded bg-slate-900 border text-[10px] leading-snug" style="border-color: ${pinColor}44;">
-            <span class="font-bold text-slate-300 block mb-0.5">Action Directive:</span>
+            <span class="font-bold text-slate-300 block mb-0.5">Civil Protection Action Directive:</span>
             <span class="${risk.level === 'LOW_SAFE' ? 'text-emerald-300' : 'text-amber-300'}">${risk.actionGuidance}</span>
           </div>
 
@@ -540,6 +731,13 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
       {/* Map Element */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
+      {/* Holographic Tactical Coordinate Grid (.tactical-grid) */}
+      <div 
+        className={`pointer-events-none absolute inset-0 z-10 tactical-grid transition-opacity duration-300 ${
+          showTacticalGrid ? 'opacity-50' : 'opacity-0'
+        }`} 
+      />
+
       {/* Futuristic Radar Sweep Overlay */}
       {showRadar && (
         <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden opacity-35">
@@ -551,87 +749,6 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
 
       {/* Map Control HUD: Top-Left Layer Switcher & Settlement Risk Filter */}
       <div className="absolute top-4 left-4 z-20 font-mono-tactical flex items-center gap-2 flex-wrap max-w-xl">
-        <div className="relative">
-          <button
-            onClick={() => setShowLayersMenu(!showLayersMenu)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-950/90 hover:bg-slate-900 text-slate-200 border border-slate-800 text-xs backdrop-blur-md shadow-xl transition-colors"
-          >
-            <Layers className="w-4 h-4 text-cyan-400" />
-            <span>Map Layers</span>
-          </button>
-
-          {showLayersMenu && (
-            <div className="absolute top-11 left-0 w-60 rounded-xl bg-slate-950/95 border border-slate-800 p-3 shadow-2xl backdrop-blur-md text-xs space-y-2.5 z-30">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tactical Overlays</div>
-              
-              <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                <span className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded bg-blue-500"></span>
-                  <span>Storm Surge Flood Mask</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={showFlood}
-                  onChange={(e) => setShowFlood(e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900"
-                />
-              </label>
-
-              <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                <span className="flex items-center gap-2">
-                  <MapPin className="w-3 h-3 text-red-400" />
-                  <span>Cities & Coastal Villages</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={showSettlements}
-                  onChange={(e) => setShowSettlements(e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900"
-                />
-              </label>
-
-              <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                <span className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded bg-amber-500"></span>
-                  <span>Critical Infrastructure</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={showAssets}
-                  onChange={(e) => setShowAssets(e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900"
-                />
-              </label>
-
-              <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                <span className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded bg-red-500"></span>
-                  <span>Evacuation Corridors</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={showRoutes}
-                  onChange={(e) => setShowRoutes(e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900"
-                />
-              </label>
-
-              <label className="flex items-center justify-between text-slate-300 cursor-pointer hover:text-white">
-                <span className="flex items-center gap-2">
-                  <Radio className="w-3 h-3 text-cyan-400 animate-spin" />
-                  <span>Doppler Radar & Eye</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={showRadar}
-                  onChange={(e) => setShowRadar(e.target.checked)}
-                  className="rounded border-slate-700 text-cyan-500 focus:ring-0 bg-slate-900"
-                />
-              </label>
-            </div>
-          )}
-        </div>
-
         {/* Settlement Risk Filter Chips */}
         {showSettlements && (
           <div className="flex items-center gap-1 bg-slate-950/90 border border-slate-800 p-1 rounded-lg backdrop-blur-md text-[11px]">
@@ -676,6 +793,73 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
             </button>
           </div>
         )}
+
+        {/* Risk Heatmaps Filter Toggles Bar */}
+        <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-950/90 border border-slate-800 backdrop-blur-md text-[11px]">
+          <span className="text-slate-500 px-1 text-[10px] uppercase font-bold flex items-center gap-1">
+            <span>🔥</span>
+            <span className="hidden sm:inline">Heatmaps:</span>
+          </span>
+
+          <button
+            type="button"
+            onClick={() => setShowFloodDepthHeatmap(!showFloodDepthHeatmap)}
+            className={`px-2 py-1 rounded transition-all font-bold flex items-center gap-1 text-[10px] ${
+              showFloodDepthHeatmap
+                ? 'bg-red-500/25 text-red-200 border border-red-500/60 shadow-[0_0_10px_rgba(239,68,68,0.3)]'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+            }`}
+            title="Toggle Granular Flood Depth Contours (> 4.5m, 2.5m-4.5m, 1.0m-2.5m, < 1.0m)"
+          >
+            <span>🌊</span>
+            <span>Flood Depth</span>
+            {showFloodDepthHeatmap && <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping"></span>}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowWindVelocityHeatmap(!showWindVelocityHeatmap)}
+            className={`px-2 py-1 rounded transition-all font-bold flex items-center gap-1 text-[10px] ${
+              showWindVelocityHeatmap
+                ? 'bg-amber-500/25 text-amber-200 border border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+            }`}
+            title="Toggle Wind Velocity Zones (Gale, Storm, Hurricane, Core > 200 km/h)"
+          >
+            <span>💨</span>
+            <span>Wind Zones</span>
+            {showWindVelocityHeatmap && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowPopulationDensityHeatmap(!showPopulationDensityHeatmap)}
+            className={`px-2 py-1 rounded transition-all font-bold flex items-center gap-1 text-[10px] ${
+              showPopulationDensityHeatmap
+                ? 'bg-purple-500/25 text-purple-200 border border-purple-500/60 shadow-[0_0_10px_rgba(168,85,247,0.3)]'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+            }`}
+            title="Toggle Civilian Population Density & Concentration Heatmap"
+          >
+            <span>👥</span>
+            <span>Pop Density</span>
+            {showPopulationDensityHeatmap && <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowTacticalGrid(!showTacticalGrid)}
+            className={`px-2 py-1 rounded transition-all font-bold flex items-center gap-1 text-[10px] ${
+              showTacticalGrid
+                ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-500/60 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+            }`}
+            title="Toggle Holographic Coordinate Grid (.tactical-grid)"
+          >
+            <span>📐</span>
+            <span className="hidden sm:inline">Grid</span>
+          </button>
+        </div>
       </div>
 
       {/* Floating Tactical Sector Legend: Surge Levels & Infrastructure Status */}
@@ -690,52 +874,81 @@ export const CycloneMap: React.FC<CycloneMapProps> = ({
         />
       </div>
 
-      {/* Zoom Controls HUD (Bottom-Right) */}
-      <div className="absolute bottom-24 sm:bottom-6 right-3 sm:right-4 z-20 flex flex-col items-end gap-2 font-mono-tactical pointer-events-auto">
-        {/* Quick Zoom Presets */}
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/90 border border-slate-800 backdrop-blur-md shadow-2xl text-[10px]">
-          <span className="text-cyan-400 font-bold px-1.5">ZOOM: {zoomLevel}x</span>
-          <button
-            onClick={() => mapInstanceRef.current?.setZoom(7)}
-            className={`px-1.5 py-0.5 rounded transition-colors ${zoomLevel <= 8 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            title="Regional View (7x)"
-          >
-            Region
-          </button>
-          <button
-            onClick={() => mapInstanceRef.current?.setView([16.9850, 82.2500], 11)}
-            className={`px-1.5 py-0.5 rounded transition-colors ${zoomLevel >= 9 && zoomLevel <= 12 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            title="Kakinada Sector (11x)"
-          >
-            Sector
-          </button>
-          <button
-            onClick={() => mapInstanceRef.current?.setZoom(14)}
-            className={`px-1.5 py-0.5 rounded transition-colors ${zoomLevel >= 13 && zoomLevel <= 15 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            title="Village & Ward Level (14x)"
-          >
-            Village
-          </button>
-          <button
-            onClick={() => mapInstanceRef.current?.setZoom(17)}
-            className={`px-1.5 py-0.5 rounded transition-colors ${zoomLevel >= 16 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            title="Street & Asset Detail (17x)"
-          >
-            Street
-          </button>
-        </div>
+      {/* Zoom Controls & Detailed Scale Telemetry HUD (Bottom-Right) */}
+      <ZoomLevelDetailsCard
+        zoomLevel={zoomLevel}
+        centerCoords={mapCenterCoords}
+        onZoomIn={() => mapInstanceRef.current?.zoomIn()}
+        onZoomOut={() => mapInstanceRef.current?.zoomOut()}
+        onSetPresetZoom={(z, coords) => {
+          if (coords) {
+            mapInstanceRef.current?.setView(coords, z);
+          } else {
+            mapInstanceRef.current?.setZoom(z);
+          }
+        }}
+        className="absolute bottom-24 sm:bottom-6 right-3 sm:right-4 z-20"
+        themeContext="tactical"
+      />
 
-        {/* Primary Zoom Buttons (Sixth and Seventh options removed) */}
-        <div className="flex flex-col gap-1.5 p-1 rounded-xl bg-slate-950/90 border border-slate-800 backdrop-blur-md shadow-2xl">
-          <button
-            onClick={() => mapInstanceRef.current?.zoomIn()}
-            className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-cyan-400 hover:text-cyan-300 transition-colors shadow-lg"
-            title="Zoom In (+)"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
+      {/* Active Risk Heatmaps Floating Legend Bar */}
+      {(showFloodDepthHeatmap || showWindVelocityHeatmap || showPopulationDensityHeatmap) && (
+        <div className="absolute bottom-24 sm:bottom-6 left-3 sm:left-4 z-20 font-mono-tactical pointer-events-auto max-w-xs sm:max-w-sm">
+          <div className="p-2.5 rounded-xl bg-slate-950/95 border border-slate-800 backdrop-blur-xl shadow-2xl text-[10px] space-y-1.5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-1 font-bold text-slate-300">
+              <span className="flex items-center gap-1.5">
+                <span>🔥</span>
+                <span>Active Heatmap Gradients</span>
+              </span>
+              <span className="text-[9px] text-cyan-400 font-semibold">Granular Analysis</span>
+            </div>
+
+            {showFloodDepthHeatmap && (
+              <div className="space-y-0.5">
+                <span className="text-[9px] text-red-400 font-bold uppercase flex items-center justify-between">
+                  <span>🌊 Flood Depth Scale:</span>
+                  <span className="text-white">+{TIME_STEPS[currentTimeStep].stormSurgeMeters}m Peak</span>
+                </span>
+                <div className="flex items-center gap-1 text-[8px] font-bold">
+                  <span className="px-1.5 py-0.5 rounded bg-red-600/80 text-white">&gt; 4.5m</span>
+                  <span className="px-1.5 py-0.5 rounded bg-orange-600/80 text-white">2.5m-4.5m</span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/80 text-black">1.0m-2.5m</span>
+                  <span className="px-1.5 py-0.5 rounded bg-cyan-500/80 text-black">&lt; 1.0m</span>
+                </div>
+              </div>
+            )}
+
+            {showWindVelocityHeatmap && (
+              <div className="space-y-0.5">
+                <span className="text-[9px] text-amber-400 font-bold uppercase flex items-center justify-between">
+                  <span>💨 Wind Velocity Zones:</span>
+                  <span className="text-white">{TIME_STEPS[currentTimeStep].windSpeedKmh} km/h</span>
+                </span>
+                <div className="flex items-center gap-1 text-[8px] font-bold">
+                  <span className="px-1.5 py-0.5 rounded bg-rose-600/80 text-white">&gt; 200 km/h</span>
+                  <span className="px-1.5 py-0.5 rounded bg-orange-500/80 text-white">150-200</span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/80 text-black">100-150</span>
+                  <span className="px-1.5 py-0.5 rounded bg-cyan-500/80 text-black">65-100</span>
+                </div>
+              </div>
+            )}
+
+            {showPopulationDensityHeatmap && (
+              <div className="space-y-0.5">
+                <span className="text-[9px] text-purple-400 font-bold uppercase">
+                  <span>👥 Population Density:</span>
+                </span>
+                <div className="flex items-center gap-1 text-[8px] font-bold">
+                  <span className="px-1.5 py-0.5 rounded bg-rose-700/80 text-white">&gt; 4.5k/km²</span>
+                  <span className="px-1.5 py-0.5 rounded bg-orange-600/80 text-white">1.5k-4.5k</span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/80 text-black">600-1.5k</span>
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-600/80 text-white">&lt; 600</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

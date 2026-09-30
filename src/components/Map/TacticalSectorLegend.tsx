@@ -34,7 +34,7 @@ export const TacticalSectorLegend: React.FC<TacticalSectorLegendProps> = ({
   currentTimeStep,
   className = '',
 }) => {
-  const [isOpen, setIsOpen] = useState<boolean>(true);
+  const [isOpen, setIsOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'surge' | 'assets' | 'routes'>('surge');
 
   const stepData = TIME_STEPS[currentTimeStep];
@@ -139,28 +139,33 @@ export const TacticalSectorLegend: React.FC<TacticalSectorLegendProps> = ({
       aria-label="Tactical Sector Legend"
       className={`absolute top-4 right-4 z-20 font-mono-tactical pointer-events-auto transition-all duration-300 ${className}`}
     >
-      {/* Collapsed Pill Button */}
+      {/* Small Box Option with Clean Toggle Button */}
       {!isOpen ? (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950/95 hover:bg-slate-900 border border-slate-700 text-slate-200 text-xs shadow-2xl backdrop-blur-md transition-all group"
-          title="Open Tactical Sector Legend (Surge Levels & Status Icons)"
-        >
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <Waves className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-12 transition-transform" />
-            <span className="font-bold tracking-tight">Tactical Legend</span>
-          </div>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
-            +{stepData.stormSurgeMeters}m Crest
-          </span>
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-        </button>
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950/95 border border-slate-800 shadow-2xl backdrop-blur-md">
+          <button
+            onClick={() => setIsOpen(true)}
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-850 hover:border-cyan-500/50 border border-slate-700/80 text-slate-200 text-xs shadow-lg transition-all group cursor-pointer"
+            title="Open Tactical Sector Legend full window"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <Waves className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-12 transition-transform" />
+              <span className="font-bold text-[11px] tracking-tight text-cyan-300">Tactical Legend</span>
+            </div>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+              +{stepData.stormSurgeMeters}m
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-cyan-400 group-hover:translate-y-0.5 transition-transform" />
+          </button>
+        </div>
       ) : (
         /* Expanded Floating Tactical Legend Card */
         <div className="w-80 sm:w-96 rounded-xl bg-slate-950/95 border border-slate-800 shadow-[0_10px_35px_rgba(0,0,0,0.8)] backdrop-blur-xl text-xs text-slate-100 overflow-hidden animate-in fade-in zoom-in-95">
-          {/* Header */}
-          <div className="px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-800/90 flex items-center justify-between">
+          {/* Header - Styled per CSS 2 */}
+          <div 
+            className="px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-800/90 flex items-center justify-between"
+            style={{ height: '45.2083px', width: '373.222px' }}
+          >
             <div className="flex items-center gap-2">
               <div className="p-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
                 <Waves className="w-3.5 h-3.5" />
@@ -180,9 +185,10 @@ export const TacticalSectorLegend: React.FC<TacticalSectorLegendProps> = ({
 
             <button
               onClick={() => setIsOpen(false)}
-              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title="Minimize Legend"
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1 text-[10px]"
+              title="Close to small box"
             >
+              <span>Close</span>
               <ChevronUp className="w-4 h-4" />
             </button>
           </div>
@@ -226,9 +232,12 @@ export const TacticalSectorLegend: React.FC<TacticalSectorLegendProps> = ({
             </button>
           </div>
 
-          {/* Tab 1: Color-Coded Surge Levels */}
+          {/* Tab 1: Color-Coded Surge Levels - Styled per CSS 1 */}
           {activeTab === 'surge' && (
-            <div className="p-3 space-y-2 max-h-72 overflow-y-auto">
+            <div 
+              className="p-3 space-y-2 max-h-72 overflow-y-auto"
+              style={{ height: '258px', width: '367.222px' }}
+            >
               <div className="text-[10px] text-slate-400 uppercase font-bold flex items-center justify-between">
                 <span>Inundation Depth Scale</span>
                 <span className="text-cyan-400 font-normal">Active Polygon: {stepData.stormCategory.split(' (')[0]}</span>

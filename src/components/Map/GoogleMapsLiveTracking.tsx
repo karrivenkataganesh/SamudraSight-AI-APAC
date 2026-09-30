@@ -23,6 +23,7 @@ import {
   CoastalSettlement, 
   calculateSettlementRisk 
 } from '../../data/coastalSettlements';
+import { ZoomLevelDetailsCard } from './ZoomLevelDetailsCard';
 import { 
   Radio, 
   Wind, 
@@ -732,60 +733,24 @@ const ResilientSatelliteViewer: React.FC<{
         className="w-full h-full z-0" 
       />
 
-      {/* Zoom Controls HUD (Bottom-Right) */}
-      <div className="absolute bottom-20 sm:bottom-6 right-3 sm:right-4 z-20 flex flex-col items-end gap-2 font-mono-tactical pointer-events-auto">
-        {/* Quick Zoom Presets */}
-        <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/90 border border-slate-800 backdrop-blur-md shadow-2xl text-[10px]">
-          <span className="text-cyan-400 font-bold px-1.5">ZOOM: {zoomLevel}x</span>
-          <button
-            onClick={() => {
-              mapRef.current?.setView([cycloneData.center.lat, cycloneData.center.lng], 6);
-            }}
-            className={`px-1.5 py-0.5 rounded transition-colors ${zoomLevel <= 7 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            title="Track View (6x)"
-          >
-            Track
-          </button>
-          <button
-            onClick={() => {
-              mapRef.current?.setView([16.9850, 82.2500], 10);
-            }}
-            className={`px-1.5 py-0.5 rounded transition-colors ${zoomLevel >= 8 && zoomLevel <= 11 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            title="Coast Sector (10x)"
-          >
-            Coast
-          </button>
-          <button
-            onClick={() => {
-              mapRef.current?.setZoom(13);
-            }}
-            className={`px-1.5 py-0.5 rounded transition-colors ${zoomLevel >= 12 && zoomLevel <= 14 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            title="Village & Town (13x)"
-          >
-            Village
-          </button>
-          <button
-            onClick={() => {
-              mapRef.current?.setZoom(16);
-            }}
-            className={`px-1.5 py-0.5 rounded transition-colors ${zoomLevel >= 15 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
-            title="Street & Port Detail (16x)"
-          >
-            Street
-          </button>
-        </div>
-
-        {/* Primary Zoom Buttons (Sixth and Seventh options removed) */}
-        <div className="flex flex-col gap-1.5 p-1 rounded-xl bg-slate-950/90 border border-slate-800 backdrop-blur-md shadow-2xl">
-          <button
-            onClick={() => mapRef.current?.zoomIn()}
-            className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-cyan-400 hover:text-cyan-300 transition-colors shadow"
-            title="Zoom In (+)"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      {/* Zoom Controls & Detailed Scale Telemetry HUD (Bottom-Right) */}
+      <ZoomLevelDetailsCard
+        zoomLevel={zoomLevel}
+        centerCoords={cycloneData.center}
+        onZoomIn={() => mapRef.current?.zoomIn()}
+        onZoomOut={() => mapRef.current?.zoomOut()}
+        onSetPresetZoom={(z, coords) => {
+          if (coords) {
+            mapRef.current?.setView(coords, z);
+          } else if (z <= 7) {
+            mapRef.current?.setView([cycloneData.center.lat, cycloneData.center.lng], 6);
+          } else {
+            mapRef.current?.setZoom(z);
+          }
+        }}
+        className="absolute bottom-20 sm:bottom-6 right-3 sm:right-4 z-20"
+        themeContext="satellite"
+      />
     </div>
   );
 };
